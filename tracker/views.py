@@ -3,35 +3,29 @@ from django.contrib import messages, admin
 from django.http import JsonResponse, HttpResponse
 from .models import Cat, SubCat
 from login.models import Employee
+
 from django.utils import dateparse
 import datetime
 import math
 
 
-# gathers all the necessary profile data
+# Create your views here.
+
 def index(request, user):
-    # get all employees
-    employees = dict()
-    for u in Employee.objects.all():
-        employees[str(u.Username)] = str(u.First_Name) + " " + str(u.Last_Name)
-    # get the user employee
     user_obj = Employee.objects.get(Username=user)
-    # get all categories
     cats = Cat.objects.all()
-    # get all subcategories
     subcats = SubCat.objects.all()
-    # stores categories and their associated subcategories in a dictionary
     cat_subcat = {}
     for i in cats:
         cat_subcat[str(i.Category)] = []
     for s in cats:
         for t in SubCat.objects.filter(Parent_Category=s.pk):
             cat_subcat[str(s)].append(t.SubCategory)
-    return render(request, 'tracker/index.html', {'user': user, 'codes': cats, 'subcodes': subcats, 'cat_dict': cat_subcat, 'employees': employees, 'user_obj': user_obj})
+    return render(request, 'tracker/index.html', {'user': user, 'user_obj': user_obj, 'codes': cats, 'subcodes': subcats, 'cat_dict': cat_subcat})
 
 
-# New work code (subcategory)
 def add_code(request, user):
+    # New work code
     if request.POST['action'] == 'code':
         new_code = request.POST['new_code']
         new_cat = request.POST['new_cat']
@@ -40,14 +34,12 @@ def add_code(request, user):
             if entry.SubCategory == new_code:
                 messages.error(request, 'This code already exists')
                 return redirect('tracker:index', user=user)
-    # gets category new code belongs to and creates new code
     q = Cat.objects.get(Category=new_cat)
     q.subcat_set.create(Parent_Category=q.pk, SubCategory=new_code)
     q.save()
     return redirect('tracker:index', user=user)
 
 
-# process time entries
 def process_entry(request, user):
     messages.set_level(request, messages.INFO)
     # Logout button
@@ -75,9 +67,8 @@ def process_entry(request, user):
             if datetime.date(int(in_date.split("-")[0]), int(in_date.split("-")[1]), int(in_date.split("-")[2])) > datetime.date.today():
                 messages.warning(request, 'You cannot input a future task!')
                 return redirect('tracker:index', user=user)
-            # if the user selected start and end times
             if request.POST['start'] and request.POST['end']:
-                # convert start & end times to time difference in hours and minutes
+                # convert times to time difference in hours and minutes
                 current_date = datetime.date.today()
                 in_start = datetime.datetime.combine(current_date, dateparse.parse_time(request.POST['start']))
                 in_end = datetime.datetime.combine(current_date, dateparse.parse_time(request.POST['end']))
@@ -86,11 +77,9 @@ def process_entry(request, user):
                 tot_minutes = (t.seconds % 3600)/60
                 quarters = math.floor(tot_minutes/15)
                 in_minutes = quarters * 15
-                # defines max number of hours that can be worked for a single task
                 if int(in_hours) > 16:
                     messages.warning(request, 'The max number of hours is 16; go home.')
                     return redirect('tracker:index', user=user)
-            # if the user selected hours and minutes duration
             else:
                 in_hours = request.POST['hours']
                 in_minutes = request.POST['minutes']
@@ -118,49 +107,36 @@ def process_entry(request, user):
             return redirect('tracker:index', user=user)
 
 
-# processes chart data
 def chart_data(request, user):
-    # get the user employee
     user_obj = Employee.objects.get(Username=user)
     time_limit = request.GET.get("Time")
     response = {}
-    # if the tasks should be arranged by category
     if request.GET.get("X") == "Categories":
-        # initialize count for each category
         for s in Cat.objects.all():
             response[s.Category] = 0
-        # if no time restriction selected, use all tasks
         if time_limit == "None":
-            # for each task category increment the category count
             for i in user_obj.workhour_set.all():
                 for t in response.keys():
                     if str(i.Task_Category).split("-")[0] == t:
                         response[t] += 1
             return JsonResponse(response)
-        # if a time restriction is selected
         else:
-            # for each task category within the time criteria increment the category count
             for i in user_obj.workhour_set.all():
                 if time_check(i, time_limit):
                     for t in response.keys():
                         if str(i.Task_Category).split("-")[0] == t:
                             response[t] += 1
             return JsonResponse(response)
-    # if the tasks should be arranged by rework status
     elif request.GET.get("X") == "Rework":
         response = {"Rework": 0, "Not Rework": 0}
-        # if no time restriction selected, use all tasks
         if time_limit == "None":
-            # for each task rework status increment the rework status count
             for u in user_obj.workhour_set.all():
                 if u.Rework == True:
                     response["Rework"] += 1
                 elif u.Rework == False:
                     response["Not Rework"] += 1
             return JsonResponse(response)
-        # if a time restriction is selected
         else:
-            # for each task rework status within the time criteria increment the rework status count
             for u in user_obj.workhour_set.all():
                 if time_check(u, time_limit):
                     if u.Rework == True:
@@ -168,12 +144,9 @@ def chart_data(request, user):
                     elif u.Rework == False:
                         response["Not Rework"] += 1
             return JsonResponse(response)
-    # if the tasks should be arranged by amount of time spent on tasks
     elif request.GET.get("X") == "Time_Spent":
         response = {"0-2": 0, "2-4": 0, "4-6": 0, "6-8": 0, "8-10": 0}
-        # if no time restriction selected, use all tasks
         if time_limit == "None":
-            # for each task duration increment the appropriate time slot
             for v in user_obj.workhour_set.all():
                 task_hours = int(v.Hours)
                 task_minutes = int(v.Minutes)
@@ -188,9 +161,7 @@ def chart_data(request, user):
                 elif (8 < task_hours) or (task_hours == 8 and task_minutes > 0):
                     response["8-10"] += 1
             return JsonResponse(response)
-        # if a time restriction is selected
         else:
-            # for each tasks duration that fits the time criteria increment the appropriate time slot
             for v in user_obj.workhour_set.all():
                 if time_check(v, time_limit):
                     task_hours = int(v.Hours)
@@ -209,7 +180,6 @@ def chart_data(request, user):
 
 
 # Function (not route) for chart_data
-# checks if a task falls within a certain time interval
 def time_check(entry, time):
     one_week = datetime.timedelta(days=7)
     one_month = datetime.timedelta(days=31)
@@ -226,11 +196,10 @@ def time_check(entry, time):
             return True
 
 
-# returns task history
 def task_viewer(request, user):
     response = []
+    # Control user (shouldn't ever change)
     user_obj = Employee.objects.get(Username=user)
-    # for each task under the user, if the task meets the criteria add it to the response list
     for i in user_obj.workhour_set.all():
         if cat_control(request.GET.get("Category"), i):
             if subcat_control(request.GET.get("Subcategory"), i):
@@ -245,7 +214,7 @@ def task_viewer(request, user):
     return JsonResponse(response, safe=False)
 
 
-# determines whether a task is under a certain category
+# Control Category
 def cat_control(req, user_object):
     if req == "all":
         return True
@@ -256,7 +225,7 @@ def cat_control(req, user_object):
             return False
 
 
-# determines whether a task is under a certain subcategory
+# Control SubCategory
 def subcat_control(req, user_object):
     if req == "all":
         return True
@@ -267,7 +236,7 @@ def subcat_control(req, user_object):
             return False
 
 
-# determines whether a task is within a certain time constraint
+# Control Date
 def date_control(req, user_object, req_range):
     if req == "":
         return True
@@ -291,3 +260,14 @@ def date_control(req, user_object, req_range):
                 return True
         else:
             return False
+
+
+
+
+
+
+
+
+
+
+

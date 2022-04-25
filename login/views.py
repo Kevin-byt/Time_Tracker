@@ -1,14 +1,13 @@
-from django.shortcuts import render, redirect
+from django.shortcuts import render, reverse, redirect
 from django.contrib import messages
 from .models import Employee
 
 
-# renders the login screen
+# Create your views here.
 def index(request):
     return render(request, 'login/index.html')
 
 
-# checks that the input username and password are correct
 def logged(request):
     user = request.POST['in_user']
     password = request.POST['in_pass']
