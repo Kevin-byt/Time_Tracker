@@ -260,14 +260,3 @@ def date_control(req, user_object, req_range):
                 return True
         else:
             return False
-
-
-
-
-
-
-
-
-
-
-
